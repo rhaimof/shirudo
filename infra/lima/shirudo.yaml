@@ -75,6 +75,30 @@ provision:
     set -eux -o pipefail
     sh "{{.Param.checkout}}/.github/scripts/install-clang.sh"
     sh "{{.Param.checkout}}/.github/scripts/install-static-libcrypto-deps.sh"
+# On some Macs a nested guest whose GICv3 accesses this VM's KVM does not
+# trap hangs early in its boot, the test VM and the libguestfs appliance
+# that builds its image alike. The kernel reads the settings at boot: the
+# last provisioning step reboots the VM once, the first time they are
+# missing, so that a kernel that ignores them does not reboot forever.
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    traps="kvm-arm.vgic_v3_group0_trap=1 kvm-arm.vgic_v3_group1_trap=1 kvm-arm.vgic_v3_common_trap=1"
+    cfg=/etc/default/grub.d/90-shirudo-kvm.cfg
+    line="GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT $traps\""
+    if [ "$(cat "$cfg" 2>/dev/null)" != "$line" ] ||
+       ! grep -qF -- "$traps" /boot/grub/grub.cfg; then
+      printf '%s\n' "$line" >"$cfg"
+      update-grub
+    fi
+    missing=0
+    for trap in $traps; do
+      grep -qwF -- "$trap" /proc/cmdline || missing=1
+    done
+    if [ "$missing" = 1 ] && [ ! -e /var/lib/shirudo-kvm-rebooted ]; then
+      touch /var/lib/shirudo-kvm-rebooted /run/shirudo-kvm-reboot
+    fi
 # The test VMs' TPM and console sockets cannot live on the shared checkout,
 # and Ubuntu's AppArmor profile lets swtpm write only under the home
 # directory, so build/test-vm points there.
@@ -85,6 +109,15 @@ provision:
     mkdir -p ~/test-vm "{{.Param.checkout}}/build"
     if [ ! -e "{{.Param.checkout}}/build/test-vm" ]; then
       ln -s ~/test-vm "{{.Param.checkout}}/build/test-vm"
+    fi
+# Lima runs the user scripts after the system ones, so this one runs last
+# and the reboot cuts no step short. It must stay the last one.
+- mode: user
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    if [ -e /run/shirudo-kvm-reboot ]; then
+      sudo systemctl reboot
     fi
 
 probes:
@@ -105,6 +138,18 @@ probes:
       exit 1
     fi
   hint: See /var/log/cloud-init-output.log in the guest.
+- description: GICv3 traps for nested KVM
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    # Fails until the reboot of the first start; Lima retries it.
+    for trap in kvm-arm.vgic_v3_group0_trap=1 kvm-arm.vgic_v3_group1_trap=1 kvm-arm.vgic_v3_common_trap=1; do
+      grep -qwF -- "$trap" /proc/cmdline
+    done
+  hint: |
+    The VM's kernel lacks the GICv3 trap settings, without which the test
+    VM can hang early in its boot. See Troubleshooting in
+    Documentation/start/quickstart-macos.rst.
 - description: test VM state path
   script: |
     #!/bin/bash

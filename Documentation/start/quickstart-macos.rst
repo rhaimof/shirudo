@@ -71,7 +71,9 @@ Create the VM
       </details>
 
    The VM takes 8 GiB of memory and Lima's default of at most 4 CPUs.
-   Add ``--cpus=<count>`` to give the VM more CPUs.
+   Add ``--cpus=<count>`` to give the VM more CPUs. The first start
+   reboots the VM once, after it installs its packages, so that its
+   kernel traps the GICv3 accesses of the test VM.
 
 2. From your checkout, open a shell in the VM:
 
@@ -121,6 +123,32 @@ Troubleshooting
 ``limactl start`` fails on nested virtualization or on the probe for nested KVM
    The Mac does not offer nested virtualization: it is older than an M3
    or runs a macOS before 15.
+
+``limactl start`` fails on the probe for GICv3 traps, or ``make vm`` hangs
+   Without ``kvm-arm.vgic_v3_group0_trap=1``,
+   ``kvm-arm.vgic_v3_group1_trap=1`` and ``kvm-arm.vgic_v3_common_trap=1``
+   on the Lima VM's kernel command line, a nested guest hangs early in
+   its boot on some Macs: ``make vm`` stops at ``Examining the guest``
+   while it builds the test VM's image, or the test VM never reports
+   ``VM ready``. The template writes them to
+   ``/etc/default/grub.d/90-shirudo-kvm.cfg`` and reboots the VM once.
+   Check them in the VM shell:
+
+   .. code-block:: console
+
+      operator$ grep -o 'kvm-arm[^ ]*' /proc/cmdline
+      kvm-arm.vgic_v3_group0_trap=1
+      kvm-arm.vgic_v3_group1_trap=1
+      kvm-arm.vgic_v3_common_trap=1
+
+   When they are missing, restart the VM from the Mac:
+
+   .. code-block:: console
+
+      $ limactl stop shirudo-dev && limactl start shirudo-dev
+
+   A VM created from an earlier version of the template keeps that
+   version, which lacks them: delete the VM and create it again.
 
 The test VM state path probe fails, or ``make vm`` cannot create the vTPM keys
    If ``build/test-vm`` is a directory in the shared checkout, Lima leaves
