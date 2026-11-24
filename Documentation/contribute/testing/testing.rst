@@ -105,6 +105,9 @@ them in ``build/test-vm/coverage/``. :src:`.github/scripts/coverage.sh`
 reads them in the build container, whose gcov matches the compiler of the
 target, and merges them with the host's.
 
+If the tests ran under ``sudo``, pass ``--sudo-container`` to
+``coverage.sh`` to reuse root's build image for guest coverage.
+
 The report leaves out test code, vendored code and BPF programs, and counts
 nothing for a process that is killed, as the loads that ``t6143`` and
 ``t6144`` interrupt are, since gcov writes its counters at exit.

@@ -95,7 +95,7 @@ jobs:
       - name: Merge the counters of the host and the guests
         id: collect
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: .github/scripts/coverage.sh
+        run: .github/scripts/coverage.sh --sudo-container
 
       - name: Upload coverage to Coveralls
         if: ${{ !cancelled() && steps.collect.outcome == 'success' }}

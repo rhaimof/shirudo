@@ -6,7 +6,7 @@
 # write coverage/shirudo.lcov from the counters of the host's binaries
 # and, where the test VMs ran, of the target in each guest.
 #
-#   .github/scripts/coverage.sh
+#   .github/scripts/coverage.sh [--sudo-container]
 
 set -eu
 
@@ -77,14 +77,26 @@ if [ "${1:-}" = target ]; then
 	exit 0
 fi
 
+sudo_container=${1:-}
+
+capture_guest() {
+	set -- testing/container/run.sh -v "$PWD/coverage" -- \
+		"$PWD/.github/scripts/coverage.sh" target "$1"
+	if [ "$sudo_container" = --sudo-container ]; then
+		set -- sudo "$@"
+	fi
+	# Keep the tracefile owned by the caller even if the container runs as root.
+	: >coverage/target.lcov
+	"$@"
+}
+
 capture gcno --initial --output-file coverage/baseline.lcov
 capture gcda --output-file coverage/run.lcov
 set -- --add-tracefile coverage/baseline.lcov --add-tracefile coverage/run.lcov
 
 for bundle in build/test-vm/host-bundle-*; do
 	[ -d "$bundle/coverage" ] || continue
-	testing/container/run.sh -v "$PWD/coverage" -- \
-		"$PWD/.github/scripts/coverage.sh" target "$PWD/$bundle"
+	capture_guest "$PWD/$bundle"
 	set -- "$@" --add-tracefile coverage/target.lcov
 	break
 done
